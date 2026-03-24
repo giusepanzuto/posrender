@@ -74,6 +74,11 @@ internal sealed class EscPosImageRenderer
                     CommitLine(); // flush any pending text first
                     BlitRasterImage(img);
                     break;
+
+                case PrintQrPlaceholderCommand qr:
+                    CommitLine();
+                    BlitQrPlaceholder(qr);
+                    break;
             }
         }
 
@@ -98,23 +103,82 @@ internal sealed class EscPosImageRenderer
 
     private void CommitLine()
     {
-        int cellH = BitmapFont.CharHeight * (_pendingSegments.Count > 0 ? MaxHeightMul() : 1);
-        var linePixels = RenderTextLine(cellH);
-        for (int row = 0; row < cellH; row++)
-            _rows.Add(linePixels[row]);
+        foreach (var line in WrapSegments())
+        {
+            int cellH = BitmapFont.CellHeight * MaxHeightMul(line);
+            var linePixels = RenderTextLine(cellH, line);
+            for (int row = 0; row < cellH; row++)
+                _rows.Add(linePixels[row]);
+        }
         _pendingSegments.Clear();
     }
 
-    private int MaxHeightMul()
+    private static int MaxHeightMul(List<(string text, bool bold, UnderlineMode underline, TextAlignment alignment, int wMul, int hMul)> segments)
     {
         int max = 1;
-        foreach (var seg in _pendingSegments)
+        foreach (var seg in segments)
             if (seg.hMul > max) max = seg.hMul;
         return max;
     }
 
-    /// <summary>Returns one row of ARGB pixels per scan line of the text line.</summary>
-    private byte[][] RenderTextLine(int lineHeight)
+    /// <summary>
+    /// Splits <see cref="_pendingSegments"/> into wrapped lines that each fit within
+    /// <see cref="_paperWidthDots"/>. Breaks preferentially at space characters.
+    /// </summary>
+    private IEnumerable<List<(string text, bool bold, UnderlineMode underline, TextAlignment alignment, int wMul, int hMul)>> WrapSegments()
+    {
+        var currentLine = new List<(string text, bool bold, UnderlineMode underline, TextAlignment alignment, int wMul, int hMul)>();
+        int currentX = 0;
+
+        foreach (var seg in _pendingSegments)
+        {
+            int charW = BitmapFont.CellWidth * seg.wMul;
+            string remaining = seg.text;
+
+            while (remaining.Length > 0)
+            {
+                int spaceLeft = _paperWidthDots - currentX;
+                int maxChars  = charW > 0 ? spaceLeft / charW : remaining.Length;
+
+                if (maxChars <= 0 && currentX > 0)
+                {
+                    // Current line full — emit and start a new one
+                    yield return currentLine;
+                    currentLine = new();
+                    currentX    = 0;
+                    maxChars    = _paperWidthDots / charW;
+                }
+
+                if (maxChars >= remaining.Length)
+                {
+                    // Entire remaining text fits on this line
+                    currentLine.Add((remaining, seg.bold, seg.underline, seg.alignment, seg.wMul, seg.hMul));
+                    currentX += remaining.Length * charW;
+                    remaining = "";
+                }
+                else
+                {
+                    // Need to break — prefer a space boundary
+                    int breakAt = remaining.LastIndexOf(' ', maxChars - 1, maxChars);
+                    if (breakAt <= 0) breakAt = maxChars; // hard break if no space
+
+                    if (breakAt > 0)
+                        currentLine.Add((remaining[..breakAt].TrimEnd(), seg.bold, seg.underline, seg.alignment, seg.wMul, seg.hMul));
+
+                    yield return currentLine;
+                    currentLine = new();
+                    currentX    = 0;
+                    remaining   = remaining[breakAt..].TrimStart();
+                }
+            }
+        }
+
+        // Emit the last line (may be empty for a bare LF with no text)
+        yield return currentLine;
+    }
+
+    /// <summary>Returns one row of pixels per scan line of the text line.</summary>
+    private byte[][] RenderTextLine(int lineHeight, List<(string text, bool bold, UnderlineMode underline, TextAlignment alignment, int wMul, int hMul)> segments)
     {
         // Build the full pixel row buffer (width × lineHeight), all white
         var pixels = new byte[lineHeight][];
@@ -124,15 +188,15 @@ internal sealed class EscPosImageRenderer
             for (int i = 0; i < pixels[r].Length; i++) pixels[r][i] = 0xFF; // white
         }
 
-        if (_pendingSegments.Count == 0)
+        if (segments.Count == 0)
             return pixels;
 
         // Measure total text width to compute alignment offset
         int totalTextWidth = 0;
-        foreach (var seg in _pendingSegments)
-            totalTextWidth += seg.text.Length * BitmapFont.CharWidth * seg.wMul;
+        foreach (var seg in segments)
+            totalTextWidth += seg.text.Length * BitmapFont.CellWidth * seg.wMul;
 
-        int xOffset = _pendingSegments[0].alignment switch
+        int xOffset = segments[0].alignment switch
         {
             TextAlignment.Center => (_paperWidthDots - totalTextWidth) / 2,
             TextAlignment.Right  => _paperWidthDots - totalTextWidth,
@@ -141,10 +205,10 @@ internal sealed class EscPosImageRenderer
         if (xOffset < 0) xOffset = 0;
 
         int x = xOffset;
-        foreach (var (text, bold, underline, _, wMul, hMul) in _pendingSegments)
+        foreach (var (text, bold, underline, _, wMul, hMul) in segments)
         {
-            int cellW = BitmapFont.CharWidth * wMul;
-            int cellH = BitmapFont.CharHeight * hMul;
+            int cellW = BitmapFont.CellWidth * wMul;
+            int cellH = BitmapFont.CellHeight * hMul;
             int yOffset = lineHeight - cellH; // bottom-align within mixed-size line
 
             foreach (char c in text)
@@ -153,9 +217,17 @@ internal sealed class EscPosImageRenderer
 
                 for (int gy = 0; gy < BitmapFont.CharHeight; gy++)
                 {
+                    // Scale glyph rows: CharHeight(8) rows → CellHeight(24) rows → × hMul
+                    int yBase = gy * BitmapFont.CellHeight / BitmapFont.CharHeight;
+                    int yNext = (gy + 1) * BitmapFont.CellHeight / BitmapFont.CharHeight;
+
                     byte rowByte = glyph[gy];
                     for (int gx = 0; gx < BitmapFont.CharWidth; gx++)
                     {
+                        // Scale glyph columns: CharWidth(8) cols → CellWidth(12) cols → × wMul
+                        int xBase = gx * BitmapFont.CellWidth / BitmapFont.CharWidth;
+                        int xNext = (gx + 1) * BitmapFont.CellWidth / BitmapFont.CharWidth;
+
                         // Font data uses LSB-left convention (bit 0 = leftmost pixel)
                         bool ink = (rowByte & (0x01 << gx)) != 0;
                         if (bold && !ink && gx > 0)
@@ -163,16 +235,15 @@ internal sealed class EscPosImageRenderer
 
                         if (!ink) continue;
 
-                        // Scale pixel by wMul × hMul
-                        for (int dy = 0; dy < hMul; dy++)
+                        for (int dy = 0; dy < (yNext - yBase) * hMul; dy++)
                         {
-                            int py = yOffset + gy * hMul + dy;
+                            int py = yOffset + yBase * hMul + dy;
                             if (py >= lineHeight) continue;
                             byte[] rowPixels = pixels[py];
 
-                            for (int dx = 0; dx < wMul; dx++)
+                            for (int dx = 0; dx < (xNext - xBase) * wMul; dx++)
                             {
-                                int px = x + gx * wMul + dx;
+                                int px = x + xBase * wMul + dx;
                                 if (px >= _paperWidthDots) continue;
                                 int idx = px * 3;
                                 rowPixels[idx] = 0x00;     // R
@@ -240,6 +311,39 @@ internal sealed class EscPosImageRenderer
                 }
             }
 
+            _rows.Add(rowPixels);
+        }
+    }
+
+    // --- QR code placeholder ---
+
+    private void BlitQrPlaceholder(PrintQrPlaceholderCommand qr)
+    {
+        int size = Math.Min(qr.SizeDots, _paperWidthDots);
+        int xOffset = _alignment switch
+        {
+            TextAlignment.Center => (_paperWidthDots - size) / 2,
+            TextAlignment.Right  => _paperWidthDots - size,
+            _                    => 0,
+        };
+        if (xOffset < 0) xOffset = 0;
+
+        for (int gy = 0; gy < size; gy++)
+        {
+            var rowPixels = new byte[_paperWidthDots * 3];
+            for (int k = 0; k < rowPixels.Length; k++) rowPixels[k] = 0xFF;
+
+            bool isHorizontalEdge = gy == 0 || gy == size - 1;
+            for (int gx = 0; gx < size; gx++)
+            {
+                int px = xOffset + gx;
+                if (px >= _paperWidthDots) break;
+                if (!isHorizontalEdge && gx != 0 && gx != size - 1) continue;
+                int idx = px * 3;
+                rowPixels[idx] = 0x00;
+                rowPixels[idx + 1] = 0x00;
+                rowPixels[idx + 2] = 0x00;
+            }
             _rows.Add(rowPixels);
         }
     }

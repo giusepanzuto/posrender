@@ -8,16 +8,23 @@
 
     <!-- NuGet package metadata -->
     <PackageId>Posrender</PackageId>
-    <Version>1.0.0</Version>
+    <Version>0.1.0</Version>
     <Authors>giusepanzuto</Authors>
-    <Description>Posrender library</Description>
+    <Description>Renders an ESC/POS byte stream to a PNG image, reproducing what an Epson label printer would physically print. Useful for generating label previews in applications that drive POS printers.</Description>
+    <PackageTags>escpos;pos;receipt;label;printer;epson;preview;png</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/giusepanzuto/posrender</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

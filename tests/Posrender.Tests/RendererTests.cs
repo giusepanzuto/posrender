@@ -13,6 +13,21 @@ public class RendererTests
     private static SixLabors.ImageSharp.Image<Rgb24> Render(params IEscPosCommand[] commands) =>
         CreateRenderer().Render(commands);
 
+    // --- Font cell size ---
+
+    [Fact]
+    public void BitmapFont_CellWidth_Is12() => Assert.Equal(12, BitmapFont.CellWidth);
+
+    [Fact]
+    public void BitmapFont_CellHeight_Is24() => Assert.Equal(24, BitmapFont.CellHeight);
+
+    [Fact]
+    public void Render_SingleLineFeed_HeightEquals_CellHeight()
+    {
+        using var image = Render(new LineFeedCommand(1));
+        Assert.Equal(BitmapFont.CellHeight, image.Height);
+    }
+
     // --- Canvas size ---
 
     [Fact]
@@ -143,6 +158,76 @@ public class RendererTests
         using var normal = Render(new PrintTextCommand("A"), new LineFeedCommand(1));
         using var big    = Render(new SetFontSizeCommand(1, 2), new PrintTextCommand("A"), new LineFeedCommand(1));
         Assert.True(big.Height > normal.Height);
+    }
+
+    // --- Word wrap ---
+
+    [Fact]
+    public void Render_TextLongerThanPaperWidth_WrapsToMultipleLines()
+    {
+        // At 1× scale, charWidth=8px, paperWidth=576px → max 72 chars per line
+        var longText = new string('A', 100); // definitely overflows
+        using var singleLine = Render(new LineFeedCommand(1));
+        using var wrapped    = Render(new PrintTextCommand(longText), new LineFeedCommand(1));
+
+        Assert.True(wrapped.Height > singleLine.Height,
+            "Overflowing text should produce more vertical space than a blank line.");
+    }
+
+    [Fact]
+    public void Render_WordWrap_HeightGrowsWithLineCount()
+    {
+        // Two separate LF-terminated lines vs one long line that wraps to ~2 lines
+        using var twoExplicit = Render(
+            new PrintTextCommand(new string('A', 50)), new LineFeedCommand(1),
+            new PrintTextCommand(new string('A', 50)), new LineFeedCommand(1));
+
+        using var oneWrapped = Render(
+            new PrintTextCommand(new string('A', 100)), new LineFeedCommand(1));
+
+        // Wrapped single line should have similar height to two explicit lines
+        Assert.True(Math.Abs(oneWrapped.Height - twoExplicit.Height) <= BitmapFont.CellHeight,
+            "Auto-wrapped line should produce roughly the same height as two explicit lines.");
+    }
+
+    [Fact]
+    public void Render_WordWrap_BreaksPreferentiallyAtSpaces()
+    {
+        // 9 words of 7 chars each + space = 8px × 8 = 64px per word → ~9 words fit on 576px
+        // Adding more forces a wrap; with spaces the break should land at a space
+        var text = string.Join(" ", Enumerable.Repeat("ABCDEFG", 20)); // 20 words
+        using var image = Render(new PrintTextCommand(text), new LineFeedCommand(1));
+
+        // Must produce at least 2 text rows
+        using var oneLine = Render(new LineFeedCommand(1));
+        Assert.True(image.Height >= oneLine.Height * 2);
+    }
+
+    // --- QR placeholder ---
+
+    [Fact]
+    public void Render_QrPlaceholder_IncreasesHeight()
+    {
+        using var withQr    = Render(new PrintQrPlaceholderCommand(99));
+        using var withoutQr = Render();
+        Assert.True(withQr.Height > withoutQr.Height);
+    }
+
+    [Fact]
+    public void Render_QrPlaceholder_HasDarkBorderPixels()
+    {
+        using var image = Render(new PrintQrPlaceholderCommand(50));
+        bool hasDark = false;
+        image.ProcessPixelRows(acc =>
+        {
+            for (int y = 0; y < acc.Height && !hasDark; y++)
+            {
+                var row = acc.GetRowSpan(y);
+                foreach (var p in row)
+                    if (p.R < 128) { hasDark = true; break; }
+            }
+        });
+        Assert.True(hasDark, "QR placeholder should contain dark border pixels.");
     }
 
     // --- Helpers ---

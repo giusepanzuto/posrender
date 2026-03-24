@@ -145,6 +145,48 @@ public class ParserTests
         Assert.Equal(new byte[] { 0xFF, 0x00 }, img.Pixels);
     }
 
+    // --- GS ( k — QR code ---
+
+    [Fact]
+    public void Parse_QrPrintCommand_EmitsPrintQrPlaceholderCommand()
+    {
+        // GS ( k pL=3 pH=0 cn=0x31 fn=0x51 m=0x00 — print QR
+        var data = new byte[] { 0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x00 };
+        var result = EscPosParser.Parse(data);
+        var cmd = Assert.Single(result);
+        Assert.IsType<PrintQrPlaceholderCommand>(cmd);
+    }
+
+    [Fact]
+    public void Parse_QrModuleSizeThenPrint_PlaceholderSizeScalesWithModuleSize()
+    {
+        // GS ( k pL=3 pH=0 cn=0x31 fn=0x43 n=4 0x00 — set module size to 4
+        // GS ( k pL=3 pH=0 cn=0x31 fn=0x51 m=0x00  — print
+        var data = new byte[]
+        {
+            0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x04, 0x00, // module size = 4
+            0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x00,        // print
+        };
+        var result = EscPosParser.Parse(data);
+        var cmd = Assert.IsType<PrintQrPlaceholderCommand>(Assert.Single(result));
+        // placeholder size must be larger than with default module size (3)
+        var defaultData = new byte[] { 0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x00 };
+        var defaultCmd = Assert.IsType<PrintQrPlaceholderCommand>(Assert.Single(EscPosParser.Parse(defaultData)));
+        Assert.True(cmd.SizeDots > defaultCmd.SizeDots);
+    }
+
+    [Fact]
+    public void Parse_QrStoreData_DoesNotLeakBytesAsText()
+    {
+        // GS ( k pL=5 pH=0 cn=0x31 fn=0x50 m=0x00 data="AB" — store QR data (5 payload bytes)
+        // followed by a bare LF that must NOT be swallowed
+        var data = new byte[] { 0x1D, 0x28, 0x6B, 0x05, 0x00, 0x31, 0x50, 0x00, 0x41, 0x42, 0x0A };
+        var result = EscPosParser.Parse(data);
+        // Everything up to and including the GS( payload is consumed; only the trailing LF remains
+        Assert.Single(result);
+        Assert.IsType<LineFeedCommand>(result[0]);
+    }
+
     // --- Incomplete sequence robustness ---
 
     [Fact]

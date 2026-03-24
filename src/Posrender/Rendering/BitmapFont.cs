@@ -7,10 +7,16 @@ namespace Posrender.Rendering;
 /// </summary>
 internal static class BitmapFont
 {
-    /// <summary>Character cell width in pixels.</summary>
+    /// <summary>Character cell width in pixels (rendered size, scaling the 8-wide glyph data to 12 dots).</summary>
+    public const int CellWidth = 12;
+
+    /// <summary>Character cell height in pixels (rendered size, scaling the 8-high glyph data to 24 dots).</summary>
+    public const int CellHeight = 24;
+
+    /// <summary>Glyph data width in bits per row.</summary>
     public const int CharWidth = 8;
 
-    /// <summary>Character cell height in pixels.</summary>
+    /// <summary>Glyph data height in rows.</summary>
     public const int CharHeight = 8;
 
     // Font data: 96 characters starting at 0x20 (space), 8 bytes each.

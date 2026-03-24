@@ -97,12 +97,13 @@ public class IntegrationTests
         Assert.True(File.Exists(binPath), $"Test resource not found: {binPath}");
 
         byte[] data = File.ReadAllBytes(binPath);
-        var stream = PosRenderer.Render(data);
+        var options = PosRenderOptions.FromMillimeters(80);
+        var stream = PosRenderer.Render(data, options);
 
         // Verify it is a valid PNG with the expected paper width
         stream.Position = 0;
         using var image = Image.Load(stream);
-        Assert.Equal(new PosRenderOptions().PaperWidthDots, image.Width);
+        Assert.Equal(options.PaperWidthDots, image.Width);
         Assert.True(image.Height > 0);
 
         // Save the rendered PNG alongside the source file so it can be inspected visually

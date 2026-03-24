@@ -17,6 +17,7 @@ public static class EscPosParser
         var commands = new List<IEscPosCommand>();
         var textBuffer = new StringBuilder();
         int i = 0;
+        int qrModuleSize = 3; // default QR module size in dots
 
         void FlushText()
         {
@@ -159,6 +160,30 @@ public static class EscPosParser
                         // Incomplete data — skip
                         i = data.Length;
                     }
+                    continue;
+                }
+
+                // GS ( k — QR code commands; handle before generic GS ( handler
+                // Format: GS ( k(0x6B) pL pH  [pL+pH*256 bytes: cn fn2 data...]
+                if (next == 0x28 && i + 4 < data.Length && data[i + 2] == 0x6B)
+                {
+                    int dataLen = data[i + 3] + data[i + 4] * 256;
+                    if (dataLen >= 2 && i + 5 + dataLen <= data.Length)
+                    {
+                        byte cn  = data[i + 5];
+                        byte fn2 = data[i + 6];
+                        if (cn == 0x31)
+                        {
+                            if (fn2 == 0x43 && dataLen >= 3) // set module size
+                                qrModuleSize = data[i + 7];
+                            else if (fn2 == 0x51)            // print QR
+                            {
+                                FlushText();
+                                commands.Add(new PrintQrPlaceholderCommand(qrModuleSize * 33));
+                            }
+                        }
+                    }
+                    i += 5 + dataLen;
                     continue;
                 }
 
