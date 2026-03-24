@@ -162,6 +162,25 @@ public static class EscPosParser
                     continue;
                 }
 
+                // GS ( fn pL pH data... — variable-length compound command (QR code, logo, etc.)
+                // Format: GS ( fn pL pH [pL + pH*256 bytes]
+                if (next == 0x28 && i + 4 < data.Length)
+                {
+                    int dataLen = data[i + 3] + data[i + 4] * 256;
+                    i += 5 + dataLen; // skip GS + ( + fn + pL + pH + data
+                    continue;
+                }
+
+                // GS V m [n] — paper cut (m=0x41/0x42/0x43 use 4 bytes, others 3 bytes)
+                if (next == 0x56 && i + 2 < data.Length)
+                {
+                    byte m = data[i + 2];
+                    // m=0x41(A), 0x42(B), 0x43(C) have an extra feed-distance byte n
+                    bool hasN = m == 0x41 || m == 0x42 || m == 0x43;
+                    i += hasN && i + 3 < data.Length ? 4 : 3;
+                    continue;
+                }
+
                 // Unknown GS sequence — skip the two bytes
                 i += 2;
                 continue;
