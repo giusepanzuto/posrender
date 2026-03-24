@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Posrender/Posrender.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Posrender.Tests/Posrender.Tests.csproj" />
+  </Folder>
 </Solution>
