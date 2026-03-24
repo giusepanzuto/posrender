@@ -5,7 +5,8 @@
       "Bash(dotnet new:*)",
       "Bash(dotnet build:*)",
       "Bash(dotnet restore:*)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Bash(xxd tests/Posrender.Tests/TestResources/fail_label.bin)"
     ]
   }
 }

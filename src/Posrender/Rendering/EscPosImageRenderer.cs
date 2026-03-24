@@ -156,9 +156,10 @@ internal sealed class EscPosImageRenderer
                     byte rowByte = glyph[gy];
                     for (int gx = 0; gx < BitmapFont.CharWidth; gx++)
                     {
-                        bool ink = (rowByte & (0x80 >> gx)) != 0;
+                        // Font data uses LSB-left convention (bit 0 = leftmost pixel)
+                        bool ink = (rowByte & (0x01 << gx)) != 0;
                         if (bold && !ink && gx > 0)
-                            ink = (rowByte & (0x80 >> (gx - 1))) != 0; // simple bold: repeat 1px right
+                            ink = (rowByte & (0x01 << (gx - 1))) != 0; // simple bold: repeat 1px right
 
                         if (!ink) continue;
 
