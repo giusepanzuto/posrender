@@ -27,4 +27,10 @@
     <ProjectReference Include="..\..\src\Posrender\Posrender.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="TestResources\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

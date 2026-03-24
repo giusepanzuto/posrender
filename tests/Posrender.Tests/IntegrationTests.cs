@@ -1,4 +1,5 @@
 using SixLabors.ImageSharp;
+using System.IO;
 
 namespace Posrender.Tests;
 
@@ -87,5 +88,27 @@ public class IntegrationTests
         Assert.Equal(0, stream.Position);
         Assert.True(stream.CanSeek);
         Assert.True(stream.Length > 0);
+    }
+
+    [Fact]
+    public void Render_FailLabel_ProducesValidPng()
+    {
+        var binPath = Path.Combine("TestResources", "fail_label.bin");
+        Assert.True(File.Exists(binPath), $"Test resource not found: {binPath}");
+
+        byte[] data = File.ReadAllBytes(binPath);
+        var stream = PosRenderer.Render(data);
+
+        // Verify it is a valid PNG with the expected paper width
+        stream.Position = 0;
+        using var image = Image.Load(stream);
+        Assert.Equal(new PosRenderOptions().PaperWidthDots, image.Width);
+        Assert.True(image.Height > 0);
+
+        // Save the rendered PNG alongside the source file so it can be inspected visually
+        var outPath = Path.Combine("TestResources", "fail_label.png");
+        stream.Position = 0;
+        using var outFile = File.Create(outPath);
+        stream.CopyTo(outFile);
     }
 }
